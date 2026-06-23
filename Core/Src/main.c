@@ -21,7 +21,8 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
-
+#include <string.h>
+#include <stdio.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -63,6 +64,33 @@ void SystemClock_Config(void);
   * @brief  The application entry point.
   * @retval int
   */
+ uint8_t rxData;
+ char rxBuffer[50];
+ uint8_t rxIndex = 0;
+ volatile uint8_t rxFlag = 0;
+ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+ {
+	  if(huart->Instance == USART2)
+	  {
+		  if(rxData == '\r' || rxData == '\n')
+		  {
+			  rxBuffer[rxIndex] = '\0';
+			  rxIndex = 0;
+			  rxFlag = 1;
+
+			  char msg[] = "\r\n[CMD RECEIVED]\r\n";
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+		  }
+		  else
+		  {
+			  if(rxIndex < sizeof(rxBuffer) -1)
+			  {
+				  rxBuffer[rxIndex++] = rxData;
+			  }
+		  }
+		  HAL_UART_Receive_IT(&huart2,&rxData,1);
+	  }
+ }
 int main(void)
 {
 
@@ -90,16 +118,37 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
+  HAL_UART_Receive_IT(&huart2,&rxData,1);
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_1);
+
   while (1)
   {
-	  __HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,999);
+	  if(rxFlag)
+	  {
+		  rxFlag = 0;
+		  if(strcmp(rxBuffer, "on") == 0)
+		  {
+			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 500);
+		  }
+		  else if(strcmp(rxBuffer, "off") == 0)
+		  {
+			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+		  }
+		  else if(strncmp(rxBuffer, "bright", 6) == 0)
+		  {
+			  int value = 0;
+			  sscanf(rxBuffer, "bright %d", &value);
+			  if (value > 999) value = 999;
+			  if (value < 0 )  value = 0;
+			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, value);
+		  }
+	  }
   }
   /* USER CODE END 3 */
 }
