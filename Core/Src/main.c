@@ -168,6 +168,17 @@ int main(void)
 			  sprintf(msg, "LED: %s\r\nBrightness: %d\r\n", ledState ? "ON" : "OFF", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
+		  else if(strcmp(rxBuffer, "help") == 0)
+		  {
+			  char msg[] =
+			  "======== Smart Light System ========\r\n"
+			  "on               : LED ON\r\n"
+			  "off              : LED OFF\r\n"
+			  "bright <0-999>   : Set Brightness\r\n"
+			  "status           : Show LED Status\r\n"
+			  "help             : Show Command List\r\n";
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+		  }
 		  else
 		  {
 			  char msg[] = "ERROR: Unknown Command\r\n";
