@@ -168,6 +168,29 @@ int main(void)
 			  sprintf(msg, "LED: %s\r\nBrightness: %d\r\n", ledState ? "ON" : "OFF", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
+		  else if(strcmp(rxBuffer, "fade") == 0)
+		  {
+			  int i;
+			  ledState = 1;
+			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+			  for(i=0; i<=999; i++)
+			  {
+				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
+				  HAL_Delay(2);
+			  }
+			  brightness = 999;
+			  for(i=999; i>=0; i--)
+			  {
+				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
+				  HAL_Delay(2);
+			  }
+			  brightness = 0;
+			  ledState = 0;
+			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+
+			  char msg[] = "OK: Fade Complete\r\n";
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+		  }
 		  else if(strcmp(rxBuffer, "help") == 0)
 		  {
 			  char msg[] =
@@ -176,9 +199,11 @@ int main(void)
 			  "off              : LED OFF\r\n"
 			  "bright <0-999>   : Set Brightness\r\n"
 			  "status           : Show LED Status\r\n"
+			  "fade             : Fade In/Out Effect\r\n"
 			  "help             : Show Command List\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
+
 		  else
 		  {
 			  char msg[] = "ERROR: Unknown Command\r\n";
