@@ -68,6 +68,8 @@ void SystemClock_Config(void);
  char rxBuffer[50];
  uint8_t rxIndex = 0;
  volatile uint8_t rxFlag = 0;
+ uint8_t ledState = 0;
+ int brightness = 500;
  void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
  {
 	  if(huart->Instance == USART2)
@@ -78,8 +80,7 @@ void SystemClock_Config(void);
 			  rxIndex = 0;
 			  rxFlag = 1;
 
-			  char msg[] = "\r\n[CMD RECEIVED]\r\n";
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+
 		  }
 		  else
 		  {
@@ -133,20 +134,38 @@ int main(void)
 		  rxFlag = 0;
 		  if(strcmp(rxBuffer, "on") == 0)
 		  {
+			  ledState = 1;
 			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 500);
+			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
+			  char msg[] = "OK: LED ON\r\n";
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 		  else if(strcmp(rxBuffer, "off") == 0)
 		  {
+			  ledState = 0;
 			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+			  char msg[] = "OK: LED OFF\r\n";
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+
 		  }
 		  else if(strncmp(rxBuffer, "bright", 6) == 0)
 		  {
-			  int value = 0;
-			  sscanf(rxBuffer, "bright %d", &value);
-			  if (value > 999) value = 999;
-			  if (value < 0 )  value = 0;
-			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, value);
+
+			  sscanf(rxBuffer, "bright %d", &brightness);
+			  if (brightness > 999) brightness = 999;
+			  if (brightness < 0 )  brightness = 0;
+			  if(ledState)
+			      {
+			          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
+			      }
+			  char msg[50];
+			  sprintf(msg,"OK: Brightness: %d\r\n", brightness);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+		  }
+		  else
+		  {
+			  char msg[] = "ERROR: Unknown Command\r\n";
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 	  }
   }
