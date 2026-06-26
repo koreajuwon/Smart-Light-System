@@ -159,7 +159,13 @@ int main(void)
 			          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
 			      }
 			  char msg[50];
-			  sprintf(msg,"OK: Brightness: %d\r\n", brightness);
+			  sprintf(msg, "OK: Brightness: %d\r\n", brightness);
+			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+		  }
+		  else if(strcmp(rxBuffer, "status") == 0)
+		  {
+			  char msg[100];
+			  sprintf(msg, "LED: %s\r\nBrightness: %d\r\n", ledState ? "ON" : "OFF", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 		  else
