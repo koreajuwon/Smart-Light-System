@@ -21,8 +21,11 @@
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
+#include "i2c.h"
 #include <string.h>
 #include <stdio.h>
+#include "ssd1306.h"
+#include "ssd1306_fonts.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -52,7 +55,7 @@
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void OLED_ShowStatus(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -119,9 +122,11 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   MX_TIM2_Init();
+  MX_I2C1_Init();
   HAL_UART_Receive_IT(&huart2,&rxData,1);
   /* USER CODE BEGIN 2 */
-
+  ssd1306_Init();
+  OLED_ShowStatus();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -137,6 +142,7 @@ int main(void)
 			  ledState = 1;
 			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
+			  OLED_ShowStatus();
 			  char msg[] = "OK: LED ON\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
@@ -144,6 +150,7 @@ int main(void)
 		  {
 			  ledState = 0;
 			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+			  OLED_ShowStatus();
 			  char msg[] = "OK: LED OFF\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 
@@ -158,12 +165,14 @@ int main(void)
 			      {
 			          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
 			      }
+			  OLED_ShowStatus();
 			  char msg[50];
 			  sprintf(msg, "OK: Brightness: %d\r\n", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 		  else if(strcmp(rxBuffer, "status") == 0)
 		  {
+			  OLED_ShowStatus();
 			  char msg[100];
 			  sprintf(msg, "LED: %s\r\nBrightness: %d\r\n", ledState ? "ON" : "OFF", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
@@ -172,22 +181,26 @@ int main(void)
 		  {
 			  int i;
 			  ledState = 1;
+			  brightness = 0;
+			  OLED_ShowStatus();
 			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 			  for(i=0; i<=999; i++)
 			  {
 				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
+
 				  HAL_Delay(2);
 			  }
 			  brightness = 999;
 			  for(i=999; i>=0; i--)
 			  {
 				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
+
 				  HAL_Delay(2);
 			  }
 			  brightness = 0;
 			  ledState = 0;
 			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-
+			  OLED_ShowStatus();
 			  char msg[] = "OK: Fade Complete\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
@@ -254,7 +267,30 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+void OLED_ShowStatus(void)
+{
+    char line1[20];
+    char line2[20];
 
+    ssd1306_Fill(Black);
+
+    // LED 상태
+    if(ledState)
+        sprintf(line1, "LED: ON");
+    else
+        sprintf(line1, "LED: OFF");
+
+    // PWM 값
+    sprintf(line2, "PWM: %d", brightness);
+
+    ssd1306_SetCursor(0, 0);
+    ssd1306_WriteString(line1, Font_7x10, White);
+
+    ssd1306_SetCursor(0, 16);
+    ssd1306_WriteString(line2, Font_7x10, White);
+
+    ssd1306_UpdateScreen();
+}
 /* USER CODE END 4 */
 
 /**
