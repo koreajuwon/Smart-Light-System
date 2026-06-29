@@ -79,10 +79,12 @@ void OLED_ShowStatus(void);
 	  {
 		  if(rxData == '\r' || rxData == '\n')
 		  {
+			  if(rxIndex > 0)
+			  {
 			  rxBuffer[rxIndex] = '\0';
 			  rxIndex = 0;
 			  rxFlag = 1;
-
+			  }
 
 		  }
 		  else
@@ -187,15 +189,23 @@ int main(void)
 			  for(i=0; i<=999; i++)
 			  {
 				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
-
 				  HAL_Delay(2);
+				  if(i % 100 == 0)
+				  	{
+					  	  brightness = i;
+					  	  OLED_ShowStatus();
+				  	}
 			  }
 			  brightness = 999;
 			  for(i=999; i>=0; i--)
 			  {
 				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
-
 				  HAL_Delay(2);
+				  if(i % 100 == 0)
+				  	 {
+				  		 brightness = i;
+				  		 OLED_ShowStatus();
+				  	 }
 			  }
 			  brightness = 0;
 			  ledState = 0;
