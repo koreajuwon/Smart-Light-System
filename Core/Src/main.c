@@ -51,7 +51,8 @@
 /* USER CODE BEGIN PV */
 uint8_t bh1750_data[2];
 uint16_t lux = 0;
-uint32_t prevTime = 0;
+uint32_t lastSensorTime = 0;
+uint32_t lastUiTime = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,6 +76,7 @@ void OLED_ShowStatus(void);
  volatile uint8_t rxFlag = 0;
  uint8_t ledState = 0;
  int brightness = 500;
+ volatile uint8_t oledUpdateFlag = 0;
  void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
  {
 	  if(huart->Instance == USART2)
@@ -152,42 +154,57 @@ int main(void)
 
   while (1)
   {
-	  if(HAL_I2C_Master_Receive(&hi2c1, 0x23 << 1, bh1750_data, 2, 100) == HAL_OK)
-	  {
-	      lux = ((bh1750_data[0] << 8) | bh1750_data[1]) / 1.2;
-	  }
-	  if(HAL_GetTick() - prevTime >= 500)
-	  {
-	      prevTime = HAL_GetTick();
+	  if (HAL_GetTick() - lastSensorTime >= 100)
+	      {
+	          lastSensorTime = HAL_GetTick();
 
-	      char msg[50];
-	      sprintf(msg, "Lux : %d\r\n", lux);
-	      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-	  }
+	          if (HAL_I2C_Master_Receive(&hi2c1, 0x23 << 1, bh1750_data, 2, 100) == HAL_OK)
+	          {
+	              lux = ((bh1750_data[0] << 8) | bh1750_data[1]) / 1.2;
+
+	              oledUpdateFlag = 1;
+	          }
+
+	      }
+
+	  if (HAL_GetTick() - lastUiTime >= 500)
+	      {
+	          lastUiTime = HAL_GetTick();
+
+	          if(oledUpdateFlag)
+	              {
+	                  oledUpdateFlag = 0;
+	                  OLED_ShowStatus();
+	              }
+
+	      }
+
 	  if(rxFlag)
 	  {
 		  rxFlag = 0;
 		  if(strcmp(rxBuffer, "on") == 0)
 		  {
 			  ledState = 1;
+			  oledUpdateFlag = 1;
 			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
-			  OLED_ShowStatus();
+
 			  char msg[] = "OK: LED ON\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 		  else if(strcmp(rxBuffer, "off") == 0)
 		  {
 			  ledState = 0;
+			  oledUpdateFlag = 1;
 			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-			  OLED_ShowStatus();
+
 			  char msg[] = "OK: LED OFF\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 
 		  }
 		  else if(strncmp(rxBuffer, "bright", 6) == 0)
 		  {
-
+			  oledUpdateFlag = 1;
 			  sscanf(rxBuffer, "bright %d", &brightness);
 			  if (brightness > 999) brightness = 999;
 			  if (brightness < 0 )  brightness = 0;
@@ -195,14 +212,14 @@ int main(void)
 			      {
 			          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
 			      }
-			  OLED_ShowStatus();
+
 			  char msg[50];
 			  sprintf(msg, "OK: Brightness: %d\r\n", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 		  else if(strcmp(rxBuffer, "status") == 0)
 		  {
-			  OLED_ShowStatus();
+
 			  char msg[100];
 			  sprintf(msg, "LED: %s\r\nBrightness: %d\r\n", ledState ? "ON" : "OFF", brightness);
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
@@ -212,7 +229,7 @@ int main(void)
 			  int i;
 			  ledState = 1;
 			  brightness = 0;
-			  OLED_ShowStatus();
+
 			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 			  for(i=0; i<=999; i++)
 			  {
@@ -220,8 +237,8 @@ int main(void)
 				  HAL_Delay(2);
 				  if(i % 100 == 0)
 				  	{
-					  	  brightness = i;
-					  	  OLED_ShowStatus();
+					  	brightness = i;
+					  	OLED_ShowStatus();
 				  	}
 			  }
 			  brightness = 999;
@@ -237,8 +254,9 @@ int main(void)
 			  }
 			  brightness = 0;
 			  ledState = 0;
+			  oledUpdateFlag = 1;
 			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
-			  OLED_ShowStatus();
+
 			  char msg[] = "OK: Fade Complete\r\n";
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
@@ -309,23 +327,27 @@ void OLED_ShowStatus(void)
 {
     char line1[20];
     char line2[20];
-
+    char line3[20];
+    char line4[20];
     ssd1306_Fill(Black);
 
-    // LED 상태
-    if(ledState)
-        sprintf(line1, "LED: ON");
-    else
-        sprintf(line1, "LED: OFF");
-
-    // PWM 값
-    sprintf(line2, "PWM: %d", brightness);
+    sprintf(line1, "LED : %s", ledState ? "ON" : "OFF");
+    sprintf(line2, "PWM : %d", brightness);
+    sprintf(line3, "MODE: UART");
+    sprintf(line4, "LUX : %d", lux);
 
     ssd1306_SetCursor(0, 0);
     ssd1306_WriteString(line1, Font_7x10, White);
 
     ssd1306_SetCursor(0, 16);
     ssd1306_WriteString(line2, Font_7x10, White);
+
+
+    ssd1306_SetCursor(0, 32);
+    ssd1306_WriteString(line3, Font_7x10, White);
+
+    ssd1306_SetCursor(0, 48);
+    ssd1306_WriteString(line4, Font_7x10, White);
 
     ssd1306_UpdateScreen();
 }
