@@ -49,7 +49,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint8_t bh1750_data[2];
+uint16_t lux = 0;
+uint32_t prevTime = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -129,6 +131,20 @@ int main(void)
   /* USER CODE BEGIN 2 */
   ssd1306_Init();
   OLED_ShowStatus();
+
+  uint8_t cmd = 0x10;   // Continuous H-Resolution Mode
+  HAL_I2C_Master_Transmit(&hi2c1, 0x23 << 1, &cmd, 1, 100);
+  HAL_Delay(180);
+  if (HAL_I2C_IsDeviceReady(&hi2c1, 0x23 << 1, 3, 100) == HAL_OK)
+  {
+      char msg[] = "BH1750 Connected\r\n";
+      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+  }
+  else
+  {
+      char msg[] = "BH1750 Not Found\r\n";
+      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -136,6 +152,18 @@ int main(void)
 
   while (1)
   {
+	  if(HAL_I2C_Master_Receive(&hi2c1, 0x23 << 1, bh1750_data, 2, 100) == HAL_OK)
+	  {
+	      lux = ((bh1750_data[0] << 8) | bh1750_data[1]) / 1.2;
+	  }
+	  if(HAL_GetTick() - prevTime >= 500)
+	  {
+	      prevTime = HAL_GetTick();
+
+	      char msg[50];
+	      sprintf(msg, "Lux : %d\r\n", lux);
+	      HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+	  }
 	  if(rxFlag)
 	  {
 		  rxFlag = 0;
