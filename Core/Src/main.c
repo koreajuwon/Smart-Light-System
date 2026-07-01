@@ -150,301 +150,256 @@ int main(void)
       char msg[] = "BH1750 Not Found\r\n";
       HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
   }
+  	uint8_t prevButtonState = GPIO_PIN_SET;
+    uint32_t lastButtonTime = 0;
   /* USER CODE END 2 */
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+    /* Infinite loop */
+      /* USER CODE BEGIN WHILE */
+      while (1)
+      {
+    	  if (HAL_GetTick() - lastSensorTime >= 100)
+    	  {
+    		  lastSensorTime = HAL_GetTick();
+    		  if (HAL_I2C_Master_Receive(&hi2c1, 0x23 << 1, bh1750_data, 2, 100) == HAL_OK)
+    		  {
+    			  lux = ((bh1750_data[0] << 8) | bh1750_data[1]) / 1.2;
+    			  oledUpdateFlag = 1;
+    		  }
+    	  }
 
-  while (1)
-  {
-	  if (HAL_GetTick() - lastSensorTime >= 100)
-	      {
-	          lastSensorTime = HAL_GetTick();
+    	  if (HAL_GetTick() - lastUiTime >= 500)
+    	  {
+    		  lastUiTime = HAL_GetTick();
+    		  if(oledUpdateFlag)
+    		  {
+    			  oledUpdateFlag = 0;
+    			  OLED_ShowStatus();
+    		  }
+    	  }
 
-	          if (HAL_I2C_Master_Receive(&hi2c1, 0x23 << 1, bh1750_data, 2, 100) == HAL_OK)
-	          {
-	              lux = ((bh1750_data[0] << 8) | bh1750_data[1]) / 1.2;
+    	  if(mode == 1 && ledState == 1)
+    	  {
+    		  if(lux <= 15)       autoBrightness = 900;
+    		  else if(lux <= 35)  autoBrightness = 700;
+    		  else if(lux <= 55)  autoBrightness = 500;
+    		  else if(lux <= 75)  autoBrightness = 300;
+    		  else                autoBrightness = 100;
 
-	              oledUpdateFlag = 1;
-	          }
+    		  if(autoBrightness > 999) autoBrightness = 999;
+    		  if(autoBrightness < 0)   autoBrightness = 0;
 
-	      }
+    		  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, autoBrightness);
 
-	  if (HAL_GetTick() - lastUiTime >= 500)
-	      {
-	          lastUiTime = HAL_GetTick();
+    		  if(HAL_GetTick() - lastAutoUpdate > 200)
+    		  {
+    			  lastAutoUpdate = HAL_GetTick();
+    			  oledUpdateFlag = 1;
+    		  }
+    	  }
 
-	          if(oledUpdateFlag)
-	              {
-	                  oledUpdateFlag = 0;
-	                  OLED_ShowStatus();
-	              }
+    	  if(rxFlag)
+    	  {
+    		  rxFlag = 0;
+    		  if(strcmp(rxBuffer, "on") == 0)
+    		  {
+    			  ledState = 1;
+    			  oledUpdateFlag = 1;
+    			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+    			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
+    			  char msg[] = "OK: LED ON\r\n";
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    		  else if(strcmp(rxBuffer, "off") == 0)
+    		  {
+    			  ledState = 0;
+    			  oledUpdateFlag = 1;
+    			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+    			  char msg[] = "OK: LED OFF\r\n";
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    		  else if(strncmp(rxBuffer, "bright", 6) == 0)
+    		  {
+    			  oledUpdateFlag = 1;
+    			  sscanf(rxBuffer, "bright %d", &brightness);
+    			  if (brightness > 999) brightness = 999;
+    			  if (brightness < 0 )  brightness = 0;
+    			  if (mode == 0 && ledState)
+    			  {
+    				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
+    			  }
 
-	      }
-	  if(mode == 1 && ledState == 1)
-	  {
-		  if(lux <= 15)
-		  {
-		      autoBrightness = 900;
-		  }
-		  else if(lux <= 35)
-		  {
-		      autoBrightness = 700;
-		  }
-		  else if(lux <= 55)
-		  {
-		      autoBrightness = 500;
-		  }
-		  else if(lux <= 75)
-		  {
-		      autoBrightness = 300;
-		  }
-		  else
-		  {
-		      autoBrightness = 100;
-		  }
-	      if(autoBrightness > 999)
-	      {
-	    	  autoBrightness = 999;
-	      }
-	      if(autoBrightness < 0)
-	      {
-	    	  autoBrightness = 0;
-	      }
+    			  char msg[50];
+    			  sprintf(msg, "OK: Brightness: %d\r\n", brightness);
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    		  else if(strcmp(rxBuffer, "status") == 0)
+    		  {
+    			  char msg[100];
+    			  sprintf(msg, "LED: %s\r\nMODE: %s\r\nPWM: %d\r\n",
+    					  ledState ? "ON" : "OFF",
+    					  mode ? "AUTO" : "UART",
+    					  mode ? autoBrightness : brightness);
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    		  else if(strcmp(rxBuffer, "fade") == 0)
+    		  {
+    			  int i;
+    			  mode = 0;
+    			  ledState = 1;
+    			  brightness = 0;
 
-	      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, autoBrightness);
+    			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+    			  for(i=0; i<=999; i++)
+    			  {
+    				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
+    				  HAL_Delay(2);
+    				  if(i % 100 == 0)
+    				  {
+    					  brightness = i;
+    					  OLED_ShowStatus();
+    				  }
+    			  }
+    			  brightness = 999;
+    			  for(i=999; i>=0; i--)
+    			  {
+    				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
+    				  HAL_Delay(2);
+    				  if(i % 100 == 0)
+    				  {
+    					  brightness = i;
+    					  OLED_ShowStatus();
+    				  }
+    			  }
+    			  brightness = 0;
+    			  ledState = 0;
+    			  oledUpdateFlag = 1;
+    			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+    			  char msg[] = "OK: Fade Complete\r\n";
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    		  else if(strcmp(rxBuffer, "help") == 0)
+    		  		  {
+    		  		  			  char msg[] =
+    		  		  			  "======== Smart Light System ========\r\n"
+    		  		  			  "on               : LED ON\r\n"
+    		  		  			  "off              : LED OFF\r\n"
+    		  		  			  "bright <0-999>   : Set Brightness\r\n"
+    		  		  			  "status           : Show LED Status\r\n"
+    		  		  			  "fade             : Fade In/Out Effect\r\n"
+    		  		  			  "help             : Show Command List\r\n";
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    		  else
+    		  {
+    			  char msg[] = "ERROR: Unknown Command\r\n";
+    			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    		  }
+    	  }
 
-	      if(HAL_GetTick() - lastAutoUpdate > 200)
-	          {
-	              lastAutoUpdate = HAL_GetTick();
-	              oledUpdateFlag = 1;
-	          }
-	  }
-	  if(rxFlag)
-	  {
-		  rxFlag = 0;
-		  if(strcmp(rxBuffer, "on") == 0)
-		  {
-			  ledState = 1;
-			  oledUpdateFlag = 1;
-			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-			  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
+    	  uint8_t currentButtonState = HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13);
+    	  if (currentButtonState == GPIO_PIN_RESET && prevButtonState == GPIO_PIN_SET)
+    	  {
+    		  if (HAL_GetTick() - lastButtonTime >= 200)
+    		  {
+    			  lastButtonTime = HAL_GetTick();
+    			  mode = !mode;
+    			  oledUpdateFlag = 1;
 
-			  char msg[] = "OK: LED ON\r\n";
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-		  }
-		  else if(strcmp(rxBuffer, "off") == 0)
-		  {
-			  ledState = 0;
-			  oledUpdateFlag = 1;
-			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+    			  if(mode == 1)
+    			  {
+    				  char msg[] = "MODE: AUTO\r\n";
+    				  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    			  }
+    			  else
+    			  {
+    				  char msg[] = "MODE: UART\r\n";
+    				  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    			  }
+    		  }
+    	  }
+    	  prevButtonState = currentButtonState;
+      }
+      /* USER CODE END 3 */
+    }
 
-			  char msg[] = "OK: LED OFF\r\n";
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+    /**
+      * @brief System Clock Configuration
+      * @retval None
+      */
+    void SystemClock_Config(void)
+    {
+      RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+      RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-		  }
-		  else if(strncmp(rxBuffer, "bright", 6) == 0)
-		  {
-			  oledUpdateFlag = 1;
-			  sscanf(rxBuffer, "bright %d", &brightness);
-			  if (brightness > 999) brightness = 999;
-			  if (brightness < 0 )  brightness = 0;
-			  if(ledState)
-			      {
-			          __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, brightness);
-			      }
+      RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+      RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+      RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+      RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+      RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+      RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+      RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+      if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+      {
+        Error_Handler();
+      }
 
-			  char msg[50];
-			  sprintf(msg, "OK: Brightness: %d\r\n", brightness);
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-		  }
-		  else if(strcmp(rxBuffer, "status") == 0)
-		  {
+      RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                                  |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+      RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+      RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+      RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+      RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+      if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+      {
+        Error_Handler();
+      }
+    }
 
-			  char msg[100];
-			  sprintf(msg, "LED: %s\r\nBrightness: %d\r\n", ledState ? "ON" : "OFF", brightness);
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-		  }
-		  else if(strcmp(rxBuffer, "fade") == 0)
-		  {
-			  int i;
-			  ledState = 1;
-			  brightness = 0;
+    /* USER CODE BEGIN 4 */
+    void OLED_ShowStatus(void)
+    {
+        char line1[20];
+        char line2[20];
+        char line3[20];
+        char line4[20];
+        ssd1306_Fill(Black);
+        sprintf(line1, "LED : %s", ledState ? "ON" : "OFF");
+        sprintf(line2, "PWM : %d", ledState ? (mode ? autoBrightness : brightness) : 0);
+        sprintf(line3, "MODE: %s", mode ? "AUTO" : "UART");
+        sprintf(line4, "LUX : %d", lux);
 
-			  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
-			  for(i=0; i<=999; i++)
-			  {
-				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
-				  HAL_Delay(2);
-				  if(i % 100 == 0)
-				  	{
-					  	brightness = i;
-					  	OLED_ShowStatus();
-				  	}
-			  }
-			  brightness = 999;
-			  for(i=999; i>=0; i--)
-			  {
-				  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, i);
-				  HAL_Delay(2);
-				  if(i % 100 == 0)
-				  	 {
-				  		 brightness = i;
-				  		 OLED_ShowStatus();
-				  	 }
-			  }
-			  brightness = 0;
-			  ledState = 0;
-			  oledUpdateFlag = 1;
-			  HAL_TIM_PWM_Stop(&htim2, TIM_CHANNEL_1);
+        ssd1306_SetCursor(0, 0);
+        ssd1306_WriteString(line1, Font_7x10, White);
 
-			  char msg[] = "OK: Fade Complete\r\n";
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-		  }
-		  else if(strcmp(rxBuffer, "help") == 0)
-		  {
-			  char msg[] =
-			  "======== Smart Light System ========\r\n"
-			  "on               : LED ON\r\n"
-			  "off              : LED OFF\r\n"
-			  "bright <0-999>   : Set Brightness\r\n"
-			  "status           : Show LED Status\r\n"
-			  "fade             : Fade In/Out Effect\r\n"
-			  "help             : Show Command List\r\n";
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-		  }
+        ssd1306_SetCursor(0, 16);
+        ssd1306_WriteString(line2, Font_7x10, White);
 
-		  else
-		  {
-			  char msg[] = "ERROR: Unknown Command\r\n";
-			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-		  }
-	  }
-	  if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET)
-	  {
-	      HAL_Delay(50); //튀는 신호 방지
+        ssd1306_SetCursor(0, 32);
+        ssd1306_WriteString(line3, Font_7x10, White);
 
-	      if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET)
-	      {
-	          mode = !mode;
+        ssd1306_SetCursor(0, 48);
+        ssd1306_WriteString(line4, Font_7x10, White);
 
-	          oledUpdateFlag = 1;
+        ssd1306_UpdateScreen();
+    }
+    /* USER CODE END 4 */
 
-	          if(mode == 1)
-	          {
-	              char msg[] = "MODE: AUTO\r\n";
-	              HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-	          }
-	          else
-	          {
-	              char msg[] = "MODE: UART\r\n";
-	              HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
-	          }
-
-	          while(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET);
-	      }
-	  }
-  }
-  /* USER CODE END 3 */
-}
-
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
-void SystemClock_Config(void)
-{
-  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-  /** Initializes the RCC Oscillators according to the specified parameters
-  * in the RCC_OscInitTypeDef structure.
-  */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
-  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Initializes the CPU, AHB and APB buses clocks
-  */
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
-
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-/* USER CODE BEGIN 4 */
-void OLED_ShowStatus(void)
-{
-    char line1[20];
-    char line2[20];
-    char line3[20];
-    char line4[20];
-    ssd1306_Fill(Black);
-
-    sprintf(line1, "LED : %s", ledState ? "ON" : "OFF");
-    sprintf(line2, "PWM : %d", ledState ? (mode ? autoBrightness : brightness) : 0);
-    sprintf(line3, "MODE: %s", mode ? "AUTO" : "UART");
-    sprintf(line4, "LUX : %d", lux);
-
-    ssd1306_SetCursor(0, 0);
-    ssd1306_WriteString(line1, Font_7x10, White);
-
-    ssd1306_SetCursor(0, 16);
-    ssd1306_WriteString(line2, Font_7x10, White);
-
-
-    ssd1306_SetCursor(0, 32);
-    ssd1306_WriteString(line3, Font_7x10, White);
-
-    ssd1306_SetCursor(0, 48);
-    ssd1306_WriteString(line4, Font_7x10, White);
-
-    ssd1306_UpdateScreen();
-}
-/* USER CODE END 4 */
-
-/**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
-void Error_Handler(void)
-{
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
-}
-#ifdef USE_FULL_ASSERT
-/**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
-void assert_failed(uint8_t *file, uint32_t line)
-{
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
-}
-#endif /* USE_FULL_ASSERT */
+    /**
+      * @brief  This function is executed in case of error occurrence.
+      * @retval None
+      */
+    void Error_Handler(void)
+    {
+      /* USER CODE BEGIN Error_Handler_Debug */
+      __disable_irq();
+      while (1)
+      {
+      }
+      /* USER CODE END Error_Handler_Debug */
+    }
+    #ifdef USE_FULL_ASSERT
+    void assert_failed(uint8_t *file, uint32_t line)
+    {
+    }
+    #endif /* USE_FULL_ASSERT */
