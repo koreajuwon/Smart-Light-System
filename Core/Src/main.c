@@ -71,11 +71,14 @@ void OLED_ShowStatus(void);
   * @retval int
   */
  uint8_t rxData;
- char rxBuffer[50];
  uint8_t rxIndex = 0;
- volatile uint8_t rxFlag = 0;
  uint8_t ledState = 0;
+ uint8_t mode = 0; // 0: UART, 1: AUTO
+ char rxBuffer[50];
  int brightness = 500;
+ int autoBrightness = 0;
+ static uint32_t lastAutoUpdate = 0;
+ volatile uint8_t rxFlag = 0;
  volatile uint8_t oledUpdateFlag = 0;
  void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
  {
@@ -178,7 +181,45 @@ int main(void)
 	              }
 
 	      }
+	  if(mode == 1 && ledState == 1)
+	  {
+		  if(lux <= 15)
+		  {
+		      autoBrightness = 900;
+		  }
+		  else if(lux <= 35)
+		  {
+		      autoBrightness = 700;
+		  }
+		  else if(lux <= 55)
+		  {
+		      autoBrightness = 500;
+		  }
+		  else if(lux <= 75)
+		  {
+		      autoBrightness = 300;
+		  }
+		  else
+		  {
+		      autoBrightness = 100;
+		  }
+	      if(autoBrightness > 999)
+	      {
+	    	  autoBrightness = 999;
+	      }
+	      if(autoBrightness < 0)
+	      {
+	    	  autoBrightness = 0;
+	      }
 
+	      __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, autoBrightness);
+
+	      if(HAL_GetTick() - lastAutoUpdate > 200)
+	          {
+	              lastAutoUpdate = HAL_GetTick();
+	              oledUpdateFlag = 1;
+	          }
+	  }
 	  if(rxFlag)
 	  {
 		  rxFlag = 0;
@@ -279,6 +320,30 @@ int main(void)
 			  HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
 		  }
 	  }
+	  if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET)
+	  {
+	      HAL_Delay(50); //튀는 신호 방지
+
+	      if(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET)
+	      {
+	          mode = !mode;
+
+	          oledUpdateFlag = 1;
+
+	          if(mode == 1)
+	          {
+	              char msg[] = "MODE: AUTO\r\n";
+	              HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+	          }
+	          else
+	          {
+	              char msg[] = "MODE: UART\r\n";
+	              HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), 100);
+	          }
+
+	          while(HAL_GPIO_ReadPin(GPIOC, GPIO_PIN_13) == GPIO_PIN_RESET);
+	      }
+	  }
   }
   /* USER CODE END 3 */
 }
@@ -332,8 +397,8 @@ void OLED_ShowStatus(void)
     ssd1306_Fill(Black);
 
     sprintf(line1, "LED : %s", ledState ? "ON" : "OFF");
-    sprintf(line2, "PWM : %d", brightness);
-    sprintf(line3, "MODE: UART");
+    sprintf(line2, "PWM : %d", ledState ? (mode ? autoBrightness : brightness) : 0);
+    sprintf(line3, "MODE: %s", mode ? "AUTO" : "UART");
     sprintf(line4, "LUX : %d", lux);
 
     ssd1306_SetCursor(0, 0);
